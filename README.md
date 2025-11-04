@@ -1,0 +1,1 @@
+using prisma studio : its a online browser visual database browser/ editor which works on prisma orm.it lets you watch learn and see data without use of difficult sql queries

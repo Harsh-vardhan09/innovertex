@@ -1,0 +1,306 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+enum UserRole {
+  USER
+  PARTICIPANT
+  ORGANIZER
+  JUDGE
+  MENTOR
+  ADMIN
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime?
+  image         String?
+  password      String?
+  avatarUrl     String?
+  role          UserRole  @default(PARTICIPANT)
+  bio           String?
+  linkedGithub  String?
+  institutionId String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relations
+  accounts           Account[]
+  sessions           Session[]
+  institution        Institution?      @relation(fields: [institutionId], references: [id])
+  organizedHackathons Hackathon[]      @relation("HackathonOrganizer")
+  teamMemberships    TeamMember[]
+  ledTeams           Team[]            @relation("TeamLeader")
+  submissions        Submission[]      @relation("SubmissionUploader")
+  judgeAssignments   JudgeAssignment[]
+  evaluations        Evaluation[]
+  sentMessages       Message[]         @relation("MessageSender")
+  receivedMessages   Message[]         @relation("MessageReceiver")
+  uploadedFiles      File[]
+
+  @@index([email])
+  @@index([role])
+}
+
+model Institution {
+  id      String  @id @default(cuid())
+  name    String
+  website String?
+  address String?
+
+  users User[]
+}
+
+enum HackathonStatus {
+  DRAFT
+  PUBLISHED
+  ONGOING
+  CLOSED
+}
+
+model Hackathon {
+  id          String          @id @default(cuid())
+  title       String
+  slug        String          @unique
+  description String
+  coverImage  String?
+  startDate   DateTime
+  endDate     DateTime
+  timezone    String          @default("UTC")
+  tags        String // JSON string for SQLite compatibility
+  organizerId String
+  capacity    Int?
+  status      HackathonStatus @default(DRAFT)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  // Relations
+  organizer       User             @relation("HackathonOrganizer", fields: [organizerId], references: [id])
+  teams           Team[]
+  submissions     Submission[]
+  announcements   Announcement[]
+  messages        Message[]
+  judgeAssignments JudgeAssignment[]
+
+  @@index([slug])
+  @@index([status])
+  @@index([startDate])
+}
+
+enum TeamMemberRole {
+  MEMBER
+  LEADER
+}
+
+model Team {
+  id          String    @id @default(cuid())
+  name        String
+  hackathonId String
+  leaderId    String
+  createdAt   DateTime  @default(now())
+
+  // Relations
+  hackathon   Hackathon    @relation(fields: [hackathonId], references: [id], onDelete: Cascade)
+  leader      User         @relation("TeamLeader", fields: [leaderId], references: [id])
+  members     TeamMember[]
+  submissions Submission[]
+
+  @@index([hackathonId])
+}
+
+model TeamMember {
+  id       String         @id @default(cuid())
+  teamId   String
+  userId   String
+  role     TeamMemberRole @default(MEMBER)
+  joinedAt DateTime       @default(now())
+
+  // Relations
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, userId])
+  @@index([userId])
+}
+
+enum SubmissionStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+}
+
+model Submission {
+  id              String           @id @default(cuid())
+  teamId          String
+  hackathonId     String
+  title           String
+  description     String
+  repositoryUrl   String?
+  liveDemoUrl     String?
+  score           Float?
+  plagiarismScore Float?
+  status          SubmissionStatus @default(PENDING)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  uploadedBy      String
+
+  // Relations
+  team             Team              @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  hackathon        Hackathon         @relation(fields: [hackathonId], references: [id], onDelete: Cascade)
+  uploader         User              @relation("SubmissionUploader", fields: [uploadedBy], references: [id])
+  files            File[]
+  judgeAssignments JudgeAssignment[]
+  evaluations      Evaluation[]
+
+  @@index([hackathonId])
+  @@index([teamId])
+  @@index([status])
+}
+
+model File {
+  id           String @id @default(cuid())
+  submissionId String
+  url          String
+  filename     String
+  mimeType     String
+  size         Int
+  uploadedBy   String
+  createdAt    DateTime @default(now())
+
+  // Relations
+  submission Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  uploader   User       @relation(fields: [uploadedBy], references: [id])
+
+  @@index([submissionId])
+}
+
+model JudgeAssignment {
+  id           String    @id @default(cuid())
+  judgeId      String
+  submissionId String
+  hackathonId  String
+  assignedAt   DateTime  @default(now())
+  completedAt  DateTime?
+  score        Float?
+  feedback     String?
+
+  // Relations
+  judge      User       @relation(fields: [judgeId], references: [id])
+  submission Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  hackathon  Hackathon  @relation(fields: [hackathonId], references: [id], onDelete: Cascade)
+
+  @@unique([judgeId, submissionId])
+  @@index([judgeId])
+  @@index([submissionId])
+}
+
+model Evaluation {
+  id           String   @id @default(cuid())
+  submissionId String
+  judgeId      String
+  scores       Json // Structured scoring data
+  comments     String?
+  createdAt    DateTime @default(now())
+
+  // Relations
+  submission Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  judge      User       @relation(fields: [judgeId], references: [id])
+
+  @@unique([submissionId, judgeId])
+  @@index([submissionId])
+}
+
+model Announcement {
+  id          String   @id @default(cuid())
+  hackathonId String
+  title       String
+  body        String
+  pinned      Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  // Relations
+  hackathon Hackathon @relation(fields: [hackathonId], references: [id], onDelete: Cascade)
+
+  @@index([hackathonId])
+  @@index([pinned])
+}
+
+enum MessageType {
+  CHAT
+  ANNOUNCEMENT
+  QUESTION
+}
+
+model Message {
+  id          String      @id @default(cuid())
+  fromUserId  String
+  toUserId    String?
+  hackathonId String?
+  body        String
+  type        MessageType @default(CHAT)
+  createdAt   DateTime    @default(now())
+
+  // Relations
+  sender    User       @relation("MessageSender", fields: [fromUserId], references: [id])
+  receiver  User?      @relation("MessageReceiver", fields: [toUserId], references: [id])
+  hackathon Hackathon? @relation(fields: [hackathonId], references: [id], onDelete: Cascade)
+
+  @@index([hackathonId])
+  @@index([fromUserId])
+  @@index([toUserId])
+}
+
+model Mentor{
+  id          String @id @default(cuid())
+  name        String
+  expertise   String
+  bio         String?
+  imageUrl    String?
+  linkedin    String?
+  createdAt   DateTime    @default(now())
+}
